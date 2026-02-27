@@ -1,5 +1,5 @@
 /**
- * FootyStatistics — Player Performance Overlay (Last 25 Games)
+ * FootyStatistics — Player Performance Overlay (Last 25 Games) + "Line" Benchmark
  * Run this in the DevTools Console OR host as perf.js for your GitHub Pages bookmarklet loader.
  *
  * UPDATED SCORING:
@@ -9,8 +9,9 @@
  * - 5 points per line break
  * - 1 point per tackle
  *
- * Works by reading the currently-rendered player game stats table in the DOM.
- * If the table isn't loaded / visible (or requires login), it will alert and exit.
+ * NEW FEATURE:
+ * - Add a user-entered "Line" (benchmark) that draws a horizontal line on the chart
+ *   so you can compare each game's performance to the line.
  */
 (() => {
   // ---------- CONFIG ----------
@@ -20,6 +21,9 @@
   // Remove existing overlay if rerun
   const existing = document.getElementById(OVERLAY_ID);
   if (existing) existing.remove();
+
+  // Local state (persisted while overlay is open)
+  let benchmarkLine = null; // number or null
 
   const toNum = (v) => {
     if (v == null) return 0;
@@ -153,7 +157,7 @@
     position: fixed;
     top: 16px;
     right: 16px;
-    width: min(760px, calc(100vw - 32px));
+    width: min(820px, calc(100vw - 32px));
     max-height: calc(100vh - 32px);
     overflow: auto;
     background: rgba(20, 20, 24, 0.95);
@@ -169,7 +173,7 @@
   title.style.cssText = `
     padding: 12px 14px;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 10px;
     border-bottom: 1px solid rgba(255,255,255,0.12);
@@ -187,22 +191,91 @@
     </div>
   `;
 
+  // ---- Benchmark input UI ----
+  const controls = document.createElement("div");
+  controls.style.cssText = `
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    align-items: flex-end;
+    margin-top: 2px;
+  `;
+
+  const inputRow = document.createElement("div");
+  inputRow.style.cssText = `display:flex; gap:8px; align-items:center;`;
+
+  const label = document.createElement("div");
+  label.textContent = "Line:";
+  label.style.cssText = `font-size: 12px; opacity: 0.85;`;
+
+  const lineInput = document.createElement("input");
+  lineInput.type = "number";
+  lineInput.placeholder = "e.g. 45";
+  lineInput.inputMode = "numeric";
+  lineInput.style.cssText = `
+    width: 120px;
+    padding: 7px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.18);
+    background: rgba(255,255,255,0.10);
+    color: #fff;
+    outline: none;
+    font-size: 12px;
+  `;
+
+  const setBtn = document.createElement("button");
+  setBtn.textContent = "Set";
+  setBtn.style.cssText = `
+    appearance: none;
+    border: 0;
+    border-radius: 10px;
+    padding: 7px 10px;
+    cursor: pointer;
+    background: rgba(255,255,255,0.16);
+    color: #fff;
+    font-weight: 700;
+    font-size: 12px;
+  `;
+
+  const clearBtn = document.createElement("button");
+  clearBtn.textContent = "Clear";
+  clearBtn.style.cssText = `
+    appearance: none;
+    border: 0;
+    border-radius: 10px;
+    padding: 7px 10px;
+    cursor: pointer;
+    background: rgba(255,255,255,0.10);
+    color: rgba(255,255,255,0.9);
+    font-weight: 700;
+    font-size: 12px;
+  `;
+
   const closeBtn = document.createElement("button");
   closeBtn.textContent = "✕";
+  closeBtn.title = "Close";
   closeBtn.style.cssText = `
     appearance: none;
     border: 0;
     border-radius: 10px;
-    padding: 6px 10px;
+    padding: 7px 10px;
     cursor: pointer;
     background: rgba(255,255,255,0.12);
     color: #fff;
-    font-weight: 700;
+    font-weight: 800;
+    font-size: 12px;
   `;
   closeBtn.onclick = () => overlay.remove();
 
+  inputRow.appendChild(label);
+  inputRow.appendChild(lineInput);
+  inputRow.appendChild(setBtn);
+  inputRow.appendChild(clearBtn);
+  controls.appendChild(inputRow);
+  controls.appendChild(closeBtn);
+
   title.appendChild(titleLeft);
-  title.appendChild(closeBtn);
+  title.appendChild(controls);
 
   // Summary
   const scores = games.map((g) => g.performance);
@@ -242,8 +315,8 @@
   chartWrap.style.cssText = `padding: 0 14px 10px 14px;`;
 
   const canvas = document.createElement("canvas");
-  canvas.width = 720;
-  canvas.height = 260;
+  canvas.width = 760;
+  canvas.height = 280;
   canvas.style.cssText = `
     width: 100%;
     height: auto;
@@ -281,7 +354,7 @@
     const tr = document.createElement("tr");
     const mgRaw = Math.floor(toNum(g.MG));
     tr.innerHTML = `
-      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); max-width: 360px; overflow:hidden; text-overflow: ellipsis; white-space: nowrap;" title="${g.Game}">${g.Game}</td>
+      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); max-width: 420px; overflow:hidden; text-overflow: ellipsis; white-space: nowrap;" title="${g.Game}">${g.Game}</td>
       <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); font-weight: 800;">${g.performance}</td>
       <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${g.matchPoints}</td>
       <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${g.tryAssistPoints}</td>
@@ -299,84 +372,141 @@
   overlay.appendChild(tbl);
   document.body.appendChild(overlay);
 
-  // ---------- DRAW CHART ----------
+  // ---------- CHART DRAWING (WITH BENCHMARK LINE) ----------
   const ctx = canvas.getContext("2d");
-  const W = canvas.width;
-  const H = canvas.height;
 
-  const pad = { l: 44, r: 12, t: 14, b: 34 };
-  const plotW = W - pad.l - pad.r;
-  const plotH = H - pad.t - pad.b;
+  const drawChart = () => {
+    const W = canvas.width;
+    const H = canvas.height;
 
-  // Reverse so chart shows older->newer left-to-right
-  const data = [...games].reverse();
-  const yVals = data.map((d) => d.performance);
-  const yMin = Math.min(...yVals);
-  const yMax = Math.max(...yVals);
-  const yRange = yMax - yMin || 1;
+    const pad = { l: 48, r: 12, t: 14, b: 40 };
+    const plotW = W - pad.l - pad.r;
+    const plotH = H - pad.t - pad.b;
 
-  ctx.clearRect(0, 0, W, H);
+    // Reverse so chart shows older->newer left-to-right
+    const data = [...games].reverse();
 
-  // Grid lines + y labels
-  const gridLines = 4;
-  ctx.lineWidth = 1;
+    // Expand y-range to include benchmark line if it exists
+    const yVals = data.map((d) => d.performance);
+    let yMin = Math.min(...yVals);
+    let yMax = Math.max(...yVals);
 
-  for (let i = 0; i <= gridLines; i++) {
-    const y = pad.t + (plotH * i) / gridLines;
+    if (benchmarkLine != null && Number.isFinite(benchmarkLine)) {
+      yMin = Math.min(yMin, benchmarkLine);
+      yMax = Math.max(yMax, benchmarkLine);
+    }
 
+    const yRange = yMax - yMin || 1;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Grid lines + y labels
+    const gridLines = 4;
+    ctx.lineWidth = 1;
+
+    for (let i = 0; i <= gridLines; i++) {
+      const y = pad.t + (plotH * i) / gridLines;
+
+      ctx.beginPath();
+      ctx.moveTo(pad.l, y);
+      ctx.lineTo(pad.l + plotW, y);
+      ctx.strokeStyle = "rgba(255,255,255,0.12)";
+      ctx.stroke();
+
+      const v = yMax - (yRange * i) / gridLines;
+      ctx.font = "11px system-ui";
+      ctx.fillStyle = "rgba(255,255,255,0.85)";
+      ctx.fillText(String(Math.round(v)), 6, y + 4);
+    }
+
+    // x positions
+    const xStep = plotW / Math.max(1, data.length - 1);
+    const xAt = (idx) => pad.l + idx * xStep;
+    const yAt = (val) => pad.t + ((yMax - val) / yRange) * plotH;
+
+    // Benchmark line
+    if (benchmarkLine != null && Number.isFinite(benchmarkLine)) {
+      const y = yAt(benchmarkLine);
+      ctx.beginPath();
+      ctx.moveTo(pad.l, y);
+      ctx.lineTo(pad.l + plotW, y);
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.55)";
+      ctx.setLineDash([6, 6]);
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Label benchmark
+      ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+      ctx.font = "11px system-ui";
+      ctx.fillText(`Line: ${benchmarkLine}`, pad.l + 8, Math.max(12, y - 6));
+    }
+
+    // Performance line
     ctx.beginPath();
-    ctx.moveTo(pad.l, y);
-    ctx.lineTo(pad.l + plotW, y);
-    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    data.forEach((d, i) => {
+      const x = xAt(i);
+      const y = yAt(d.performance);
+      if (i === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    });
+    ctx.strokeStyle = "rgba(255,255,255,0.92)";
+    ctx.lineWidth = 2;
     ctx.stroke();
 
-    const v = yMax - (yRange * i) / gridLines;
-    ctx.font = "11px system-ui";
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.fillText(String(Math.round(v)), 6, y + 4);
-  }
+    // Points
+    data.forEach((d, i) => {
+      const x = xAt(i);
+      const y = yAt(d.performance);
+      ctx.beginPath();
+      ctx.arc(x, y, 3.1, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(255,255,255,0.95)";
+      ctx.fill();
+    });
 
-  // x positions
-  const xStep = plotW / Math.max(1, data.length - 1);
-  const xAt = (idx) => pad.l + idx * xStep;
-  const yAt = (val) => pad.t + ((yMax - val) / yRange) * plotH;
+    // X labels (every 5th + last)
+    const labelIdxs = [];
+    for (let i = 0; i < data.length; i += 5) labelIdxs.push(i);
+    if (!labelIdxs.includes(data.length - 1)) labelIdxs.push(data.length - 1);
 
-  // Line
-  ctx.beginPath();
-  data.forEach((d, i) => {
-    const x = xAt(i);
-    const y = yAt(d.performance);
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  });
-  ctx.strokeStyle = "rgba(255,255,255,0.92)";
-  ctx.lineWidth = 2;
-  ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,0.75)";
+    ctx.font = "10px system-ui";
 
-  // Points
-  data.forEach((d, i) => {
-    const x = xAt(i);
-    const y = yAt(d.performance);
-    ctx.beginPath();
-    ctx.arc(x, y, 3.2, 0, Math.PI * 2);
-    ctx.fillStyle = "rgba(255,255,255,0.95)";
-    ctx.fill();
-  });
+    labelIdxs.forEach((i) => {
+      const text = data[i].Game || "";
+      const x = xAt(i);
+      const y = pad.t + plotH + 26;
+      const short = text.length > 18 ? text.slice(0, 18) + "…" : text;
+      ctx.fillText(short, Math.max(0, x - 35), y);
+    });
+  };
 
-  // X labels (every 5th + last)
-  const labelIdxs = [];
-  for (let i = 0; i < data.length; i += 5) labelIdxs.push(i);
-  if (!labelIdxs.includes(data.length - 1)) labelIdxs.push(data.length - 1);
+  // Initial draw
+  drawChart();
 
-  ctx.fillStyle = "rgba(255,255,255,0.75)";
-  ctx.font = "10px system-ui";
+  // ---------- INPUT HANDLERS ----------
+  const setBenchmark = () => {
+    const val = Number(lineInput.value);
+    if (!Number.isFinite(val)) {
+      alert("Please enter a valid number for the line.");
+      return;
+    }
+    benchmarkLine = val;
+    drawChart();
+  };
 
-  labelIdxs.forEach((i) => {
-    const text = data[i].Game || "";
-    const x = xAt(i);
-    const y = pad.t + plotH + 22;
-    const short = text.length > 18 ? text.slice(0, 18) + "…" : text;
-    ctx.fillText(short, Math.max(0, x - 35), y);
+  const clearBenchmark = () => {
+    benchmarkLine = null;
+    lineInput.value = "";
+    drawChart();
+  };
+
+  setBtn.onclick = setBenchmark;
+  clearBtn.onclick = clearBenchmark;
+
+  // Enter key sets the line
+  lineInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") setBenchmark();
   });
 
   console.log(`[FootyStats Perf] Rendered overlay with ${games.length} games. Close with the ✕ button.`);
