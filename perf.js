@@ -39,15 +39,16 @@
 
     const matchPoints = 4 * T + 2 * G + 1 * FG;
     const runMetrePoints = Math.floor(MG / 10);
+    const tryAssistPoints = TA * 10;
 
     const performance =
       (4 * matchPoints) +     // 4 pts per point scored
-      TA +                    // 1 pt per try assist
+      tryAssistPoints +       // 1 pt per try assist
       runMetrePoints +        // 1 pt per 10 run metres
       (5 * LB) +              // 5 pts per line break
       TCK;                    // 1 pt per tackle
 
-    return { ...row, matchPoints, runMetrePoints, performance };
+    return { ...row, matchPoints, tryAssistPoints, runMetrePoints, performance };
   };
 
   // ---------- FIND A TABLE THAT LOOKS LIKE THE GAME STATS ----------
