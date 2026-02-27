@@ -1,17 +1,18 @@
 /**
- * FootyStatistics — Player Performance Overlay (Last 25 Games) + "Line" Benchmark
+ * FootyStatistics — Player Performance Overlay (Last 25 Games) + Benchmark Line + Minutes Played
  * Run this in the DevTools Console OR host as perf.js for your GitHub Pages bookmarklet loader.
  *
- * UPDATED SCORING:
+ * SCORING:
  * - 4 points per point scored by the player
  * - 10 points per try assist
  * - 1 point per 10 run metres (rounded down)
  * - 5 points per line break
  * - 1 point per tackle
  *
- * NEW FEATURE:
- * - Add a user-entered "Line" (benchmark) that draws a horizontal line on the chart
- *   so you can compare each game's performance to the line.
+ * FEATURES:
+ * - Overlay with chart + table for last 25 games
+ * - User-entered "Line" benchmark (drawn on chart)
+ * - Minutes played column included in the table (Mins)
  */
 (() => {
   // ---------- CONFIG ----------
@@ -105,6 +106,7 @@
   });
 
   // Header mapping for variations (if the site changes labels)
+  // Minutes may appear as "Mins" or "Min" or "Minutes"
   const headerMap = {
     Tackles: "TCK",
     Tkl: "TCK",
@@ -118,6 +120,9 @@
     Opp: "Opponent",
     Vs: "Opponent",
     Round: "Rnd",
+    Minutes: "Mins",
+    Min: "Mins",
+    M: "Mins",
   };
 
   const normaliseRow = (r) => {
@@ -157,7 +162,7 @@
     position: fixed;
     top: 16px;
     right: 16px;
-    width: min(820px, calc(100vw - 32px));
+    width: min(900px, calc(100vw - 32px));
     max-height: calc(100vh - 32px);
     overflow: auto;
     background: rgba(20, 20, 24, 0.95);
@@ -315,8 +320,8 @@
   chartWrap.style.cssText = `padding: 0 14px 10px 14px;`;
 
   const canvas = document.createElement("canvas");
-  canvas.width = 760;
-  canvas.height = 280;
+  canvas.width = 820;
+  canvas.height = 300;
   canvas.style.cssText = `
     width: 100%;
     height: auto;
@@ -339,6 +344,7 @@
   thead.innerHTML = `
     <tr style="text-align:left; opacity:0.9;">
       <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">Game</th>
+      <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">Mins</th>
       <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">Perf</th>
       <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">Pts</th>
       <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">TA pts</th>
@@ -353,8 +359,10 @@
   games.forEach((g) => {
     const tr = document.createElement("tr");
     const mgRaw = Math.floor(toNum(g.MG));
+    const mins = Math.floor(toNum(g.Mins));
     tr.innerHTML = `
       <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); max-width: 420px; overflow:hidden; text-overflow: ellipsis; white-space: nowrap;" title="${g.Game}">${g.Game}</td>
+      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${mins || ""}</td>
       <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); font-weight: 800;">${g.performance}</td>
       <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${g.matchPoints}</td>
       <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${g.tryAssistPoints}</td>
@@ -379,7 +387,7 @@
     const W = canvas.width;
     const H = canvas.height;
 
-    const pad = { l: 48, r: 12, t: 14, b: 40 };
+    const pad = { l: 54, r: 12, t: 14, b: 44 };
     const plotW = W - pad.l - pad.r;
     const plotH = H - pad.t - pad.b;
 
@@ -475,7 +483,7 @@
     labelIdxs.forEach((i) => {
       const text = data[i].Game || "";
       const x = xAt(i);
-      const y = pad.t + plotH + 26;
+      const y = pad.t + plotH + 30;
       const short = text.length > 18 ? text.slice(0, 18) + "…" : text;
       ctx.fillText(short, Math.max(0, x - 35), y);
     });
