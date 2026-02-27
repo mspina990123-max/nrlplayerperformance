@@ -1,16 +1,16 @@
 /**
- * FootyStatistics — Player Performance (Last 10 Games)
- * Injects an on-page overlay (chart + table) showing custom performance scores.
+ * FootyStatistics — Player Performance Overlay (Last 25 Games)
+ * Run this in the DevTools Console OR host as perf.js for your GitHub Pages bookmarklet loader.
  *
- * SCORING:
+ * UPDATED SCORING:
  * - 4 points per point scored by the player
- * - 1 point per try assist
+ * - 10 points per try assist
  * - 1 point per 10 run metres (rounded down)
  * - 5 points per line break
  * - 1 point per tackle
  *
- * Run this in the DevTools Console on a player page, e.g.
- * https://footystatistics.com/cow/reuben-cotter
+ * Works by reading the currently-rendered player game stats table in the DOM.
+ * If the table isn't loaded / visible (or requires login), it will alert and exit.
  */
 (() => {
   // ---------- CONFIG ----------
@@ -37,23 +37,33 @@
     const LB = toNum(row.LB);
     const TCK = toNum(row.TCK);
 
+    // Points scored by player
     const matchPoints = 4 * T + 2 * G + 1 * FG;
-    const runMetrePoints = Math.floor(MG / 10);
-    const tryAssistPoints = TA * 10;
+
+    // Custom scoring
+    const runMetrePoints = Math.floor(MG / 10); // 1 point per 10m, rounded down
+    const tryAssistPoints = TA * 10;            // 10 points per try assist
 
     const performance =
-      (4 * matchPoints) +     // 4 pts per point scored
-      tryAssistPoints +       // 1 pt per try assist
-      runMetrePoints +        // 1 pt per 10 run metres
-      (5 * LB) +              // 5 pts per line break
-      TCK;                    // 1 pt per tackle
+      (4 * matchPoints) +    // 4 points per point scored
+      tryAssistPoints +      // 10 points per try assist
+      runMetrePoints +       // 1 point per 10 run metres
+      (5 * LB) +             // 5 points per line break
+      TCK;                   // 1 point per tackle
 
-    return { ...row, matchPoints, tryAssistPoints, runMetrePoints, performance };
+    return {
+      ...row,
+      matchPoints,
+      runMetrePoints,
+      tryAssistPoints,
+      performance,
+    };
   };
 
-  // ---------- FIND A TABLE THAT LOOKS LIKE THE GAME STATS ----------
+  // ---------- FIND STATS TABLE ----------
+  // Look for a <table> containing headers like "TCK" and "MG"
   const tables = Array.from(document.querySelectorAll("table"));
-  const table = tables.find(t => {
+  const table = tables.find((t) => {
     const txt = (t.querySelector("thead")?.innerText || t.innerText || "");
     return /(^|\s)TCK(\s|$)/.test(txt) && /(^|\s)MG(\s|$)/.test(txt);
   });
@@ -61,21 +71,22 @@
   if (!table) {
     alert(
       "Could not find the player game stats table on this page.\n\n" +
-      "Possible reasons:\n" +
-      "- The page hasn't fully loaded yet (wait and run again)\n" +
-      "- The table is hidden unless you're logged in\n" +
-      "- The site uses a non-table layout for this view"
+        "Possible reasons:\n" +
+        "- The page hasn't fully loaded yet (wait and run again)\n" +
+        "- The table is hidden unless you're logged in\n" +
+        "- The site uses a non-table layout for this view"
     );
     return;
   }
 
   // Extract headers + rows
   const headers = Array.from(table.querySelectorAll("thead th"))
-    .map(th => th.textContent.trim())
+    .map((th) => th.textContent.trim())
     .filter(Boolean);
 
-  const bodyRows = Array.from(table.querySelectorAll("tbody tr"))
-    .map(tr => Array.from(tr.querySelectorAll("td")).map(td => td.textContent.trim()));
+  const bodyRows = Array.from(table.querySelectorAll("tbody tr")).map((tr) =>
+    Array.from(tr.querySelectorAll("td")).map((td) => td.textContent.trim())
+  );
 
   if (!headers.length || !bodyRows.length) {
     alert("Found the table, but it has no readable headers/rows yet. Try again after it loads.");
@@ -83,13 +94,13 @@
   }
 
   // Build objects per row: header -> cell
-  const rowObjects = bodyRows.map(cells => {
+  const rowObjects = bodyRows.map((cells) => {
     const obj = {};
-    headers.forEach((h, i) => obj[h] = cells[i] ?? "");
+    headers.forEach((h, i) => (obj[h] = cells[i] ?? ""));
     return obj;
   });
 
-  // Header mapping for variations
+  // Header mapping for variations (if the site changes labels)
   const headerMap = {
     Tackles: "TCK",
     Tkl: "TCK",
@@ -127,7 +138,7 @@
     return nr;
   };
 
-  // Take last 10 (assumes newest first; if not, reverse)
+  // Take last 25 (assumes newest first on the site)
   const games = rowObjects.slice(0, MAX_GAMES).map(normaliseRow).map(computePerformance);
 
   if (!games.length) {
@@ -142,7 +153,7 @@
     position: fixed;
     top: 16px;
     right: 16px;
-    width: min(520px, calc(100vw - 32px));
+    width: min(760px, calc(100vw - 32px));
     max-height: calc(100vh - 32px);
     overflow: auto;
     background: rgba(20, 20, 24, 0.95);
@@ -172,7 +183,7 @@
   titleLeft.innerHTML = `
     <div style="font-weight: 700; font-size: 14px;">Performance (Last ${games.length} games)</div>
     <div style="opacity: 0.8; font-size: 12px; margin-top: 2px;">
-      4×points + TA + floor(MG/10) + 5×LB + TCK
+      4×points + 10×TA + floor(MG/10) + 5×LB + TCK
     </div>
   `;
 
@@ -194,8 +205,8 @@
   title.appendChild(closeBtn);
 
   // Summary
-  const scores = games.map(g => g.performance);
-  const avg = scores.reduce((a,b) => a+b, 0) / scores.length;
+  const scores = games.map((g) => g.performance);
+  const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
   const max = Math.max(...scores);
   const min = Math.min(...scores);
 
@@ -206,6 +217,7 @@
     grid-template-columns: 1fr 1fr 1fr;
     gap: 10px;
   `;
+
   const statBox = (label, value) => {
     const d = document.createElement("div");
     d.style.cssText = `
@@ -220,6 +232,7 @@
     `;
     return d;
   };
+
   summary.appendChild(statBox("Avg", avg.toFixed(1)));
   summary.appendChild(statBox("Max", max));
   summary.appendChild(statBox("Min", min));
@@ -229,8 +242,8 @@
   chartWrap.style.cssText = `padding: 0 14px 10px 14px;`;
 
   const canvas = document.createElement("canvas");
-  canvas.width = 480;
-  canvas.height = 210;
+  canvas.width = 720;
+  canvas.height = 260;
   canvas.style.cssText = `
     width: 100%;
     height: auto;
@@ -238,7 +251,6 @@
     border: 1px solid rgba(255,255,255,0.10);
     border-radius: 12px;
   `;
-
   chartWrap.appendChild(canvas);
 
   // Table
@@ -255,9 +267,9 @@
     <tr style="text-align:left; opacity:0.9;">
       <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">Game</th>
       <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">Perf</th>
-      <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">T</th>
-      <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">TA</th>
-      <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">MG</th>
+      <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">Pts</th>
+      <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">TA pts</th>
+      <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">MG pts</th>
       <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">LB</th>
       <th style="padding: 8px 6px; border-bottom: 1px solid rgba(255,255,255,0.12);">TCK</th>
     </tr>
@@ -265,14 +277,15 @@
   tbl.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  games.forEach(g => {
+  games.forEach((g) => {
     const tr = document.createElement("tr");
+    const mgRaw = Math.floor(toNum(g.MG));
     tr.innerHTML = `
-      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); max-width: 260px; overflow:hidden; text-overflow: ellipsis; white-space: nowrap;" title="${g.Game}">${g.Game}</td>
+      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); max-width: 360px; overflow:hidden; text-overflow: ellipsis; white-space: nowrap;" title="${g.Game}">${g.Game}</td>
       <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); font-weight: 800;">${g.performance}</td>
-      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${toNum(g.T)}</td>
-      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${toNum(g.TA)}</td>
-      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${Math.floor(toNum(g.MG))}</td>
+      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${g.matchPoints}</td>
+      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${g.tryAssistPoints}</td>
+      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${g.runMetrePoints} <span style="opacity:0.65;">(${mgRaw}m)</span></td>
       <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${toNum(g.LB)}</td>
       <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${toNum(g.TCK)}</td>
     `;
@@ -291,42 +304,35 @@
   const W = canvas.width;
   const H = canvas.height;
 
-  // basic layout
-  const pad = { l: 38, r: 12, t: 14, b: 28 };
+  const pad = { l: 44, r: 12, t: 14, b: 34 };
   const plotW = W - pad.l - pad.r;
   const plotH = H - pad.t - pad.b;
 
-  // data (keep in chronological order for nicer line)
+  // Reverse so chart shows older->newer left-to-right
   const data = [...games].reverse();
-  const yVals = data.map(d => d.performance);
+  const yVals = data.map((d) => d.performance);
   const yMin = Math.min(...yVals);
   const yMax = Math.max(...yVals);
-  const yRange = (yMax - yMin) || 1;
+  const yRange = yMax - yMin || 1;
 
-  // background
   ctx.clearRect(0, 0, W, H);
 
-  // grid + axes
+  // Grid lines + y labels
   const gridLines = 4;
-  ctx.globalAlpha = 1;
-
-  // grid lines
   ctx.lineWidth = 1;
+
   for (let i = 0; i <= gridLines; i++) {
     const y = pad.t + (plotH * i) / gridLines;
+
     ctx.beginPath();
     ctx.moveTo(pad.l, y);
     ctx.lineTo(pad.l + plotW, y);
     ctx.strokeStyle = "rgba(255,255,255,0.12)";
     ctx.stroke();
-  }
 
-  // y labels
-  ctx.font = "11px system-ui";
-  ctx.fillStyle = "rgba(255,255,255,0.85)";
-  for (let i = 0; i <= gridLines; i++) {
     const v = yMax - (yRange * i) / gridLines;
-    const y = pad.t + (plotH * i) / gridLines;
+    ctx.font = "11px system-ui";
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
     ctx.fillText(String(Math.round(v)), 6, y + 4);
   }
 
@@ -335,7 +341,7 @@
   const xAt = (idx) => pad.l + idx * xStep;
   const yAt = (val) => pad.t + ((yMax - val) / yRange) * plotH;
 
-  // line
+  // Line
   ctx.beginPath();
   data.forEach((d, i) => {
     const x = xAt(i);
@@ -347,30 +353,31 @@
   ctx.lineWidth = 2;
   ctx.stroke();
 
-  // points
+  // Points
   data.forEach((d, i) => {
     const x = xAt(i);
     const y = yAt(d.performance);
     ctx.beginPath();
-    ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+    ctx.arc(x, y, 3.2, 0, Math.PI * 2);
     ctx.fillStyle = "rgba(255,255,255,0.95)";
     ctx.fill();
   });
 
-  // x labels (show 1st, middle, last to avoid clutter)
-  const labelIdxs = new Set([0, Math.floor((data.length - 1) / 2), data.length - 1]);
+  // X labels (every 5th + last)
+  const labelIdxs = [];
+  for (let i = 0; i < data.length; i += 5) labelIdxs.push(i);
+  if (!labelIdxs.includes(data.length - 1)) labelIdxs.push(data.length - 1);
+
   ctx.fillStyle = "rgba(255,255,255,0.75)";
   ctx.font = "10px system-ui";
-  [...labelIdxs].forEach(i => {
-    if (i < 0 || i >= data.length) return;
-    const text = data[i].Game;
+
+  labelIdxs.forEach((i) => {
+    const text = data[i].Game || "";
     const x = xAt(i);
-    const y = pad.t + plotH + 18;
-    // shorten label
-    const short = text.length > 22 ? text.slice(0, 22) + "…" : text;
-    ctx.fillText(short, Math.max(0, x - 40), y);
+    const y = pad.t + plotH + 22;
+    const short = text.length > 18 ? text.slice(0, 18) + "…" : text;
+    ctx.fillText(short, Math.max(0, x - 35), y);
   });
 
-  // Done
   console.log(`[FootyStats Perf] Rendered overlay with ${games.length} games. Close with the ✕ button.`);
 })();
