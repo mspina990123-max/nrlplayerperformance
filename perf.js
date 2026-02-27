@@ -15,7 +15,7 @@
 (() => {
   // ---------- CONFIG ----------
   const OVERLAY_ID = "fs-perf-overlay";
-  const MAX_GAMES = 10;
+  const MAX_GAMES = 25;
 
   // Remove existing overlay if rerun
   const existing = document.getElementById(OVERLAY_ID);
