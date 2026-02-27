@@ -1,5 +1,5 @@
 /**
- * FootyStatistics — Player Performance Overlay (Last 25 Games) + Benchmark Line + Minutes Played
+ * FootyStatistics — Player Performance Overlay (1–25 Games Slider) + Benchmark Line + Minutes Played
  * Run this in the DevTools Console OR host as perf.js for your GitHub Pages bookmarklet loader.
  *
  * SCORING:
@@ -10,21 +10,28 @@
  * - 1 point per tackle
  *
  * FEATURES:
- * - Overlay with chart + table for last 25 games
- * - User-entered "Line" benchmark (drawn on chart)
- * - Minutes played column included in the table (Mins)
+ * - Overlay with chart + table
+ * - Slider to choose how many games to show (1..25)
+ * - Avg/Max/Min update live when slider moves
+ * - User-entered "Line" benchmark drawn on chart
+ * - Minutes played column in the table
+ *
+ * Notes:
+ * - This reads the currently-rendered player game stats table in the DOM.
+ * - If the page only loads a small number of games until you scroll, you may need to scroll first.
  */
 (() => {
   // ---------- CONFIG ----------
   const OVERLAY_ID = "fs-perf-overlay";
-  const MAX_GAMES = 25;
+  const MAX_GAMES = 25; // maximum possible for slider
 
   // Remove existing overlay if rerun
   const existing = document.getElementById(OVERLAY_ID);
   if (existing) existing.remove();
 
   // Local state (persisted while overlay is open)
-  let benchmarkLine = null; // number or null
+  let benchmarkLine = null;   // number or null
+  let gamesShown = MAX_GAMES; // slider-controlled
 
   const toNum = (v) => {
     if (v == null) return 0;
@@ -66,7 +73,6 @@
   };
 
   // ---------- FIND STATS TABLE ----------
-  // Look for a <table> containing headers like "TCK" and "MG"
   const tables = Array.from(document.querySelectorAll("table"));
   const table = tables.find((t) => {
     const txt = (t.querySelector("thead")?.innerText || t.innerText || "");
@@ -84,7 +90,6 @@
     return;
   }
 
-  // Extract headers + rows
   const headers = Array.from(table.querySelectorAll("thead th"))
     .map((th) => th.textContent.trim())
     .filter(Boolean);
@@ -105,8 +110,7 @@
     return obj;
   });
 
-  // Header mapping for variations (if the site changes labels)
-  // Minutes may appear as "Mins" or "Min" or "Minutes"
+  // Header mapping for variations
   const headerMap = {
     Tackles: "TCK",
     Tkl: "TCK",
@@ -147,13 +151,16 @@
     return nr;
   };
 
-  // Take last 25 (assumes newest first on the site)
-  const games = rowObjects.slice(0, MAX_GAMES).map(normaliseRow).map(computePerformance);
-
-  if (!games.length) {
+  // Full set of available games (up to MAX_GAMES, newest first)
+  const allGames = rowObjects.slice(0, MAX_GAMES).map(normaliseRow).map(computePerformance);
+  if (!allGames.length) {
     alert("No games found to score.");
     return;
   }
+
+  // If the page only has fewer than 25 rows loaded, clamp
+  const AVAILABLE = allGames.length;
+  gamesShown = Math.min(gamesShown, AVAILABLE);
 
   // ---------- BUILD OVERLAY UI ----------
   const overlay = document.createElement("div");
@@ -162,7 +169,7 @@
     position: fixed;
     top: 16px;
     right: 16px;
-    width: min(900px, calc(100vw - 32px));
+    width: min(960px, calc(100vw - 32px));
     max-height: calc(100vh - 32px);
     overflow: auto;
     background: rgba(20, 20, 24, 0.95);
@@ -190,28 +197,30 @@
 
   const titleLeft = document.createElement("div");
   titleLeft.innerHTML = `
-    <div style="font-weight: 700; font-size: 14px;">Performance (Last ${games.length} games)</div>
+    <div id="fs-title" style="font-weight: 700; font-size: 14px;">Performance</div>
     <div style="opacity: 0.8; font-size: 12px; margin-top: 2px;">
       4×points + 10×TA + floor(MG/10) + 5×LB + TCK
     </div>
   `;
 
-  // ---- Benchmark input UI ----
+  // ---- Controls UI: line input + slider + close ----
   const controls = document.createElement("div");
   controls.style.cssText = `
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 10px;
     align-items: flex-end;
     margin-top: 2px;
+    min-width: 330px;
   `;
 
-  const inputRow = document.createElement("div");
-  inputRow.style.cssText = `display:flex; gap:8px; align-items:center;`;
+  // Line benchmark controls
+  const lineRow = document.createElement("div");
+  lineRow.style.cssText = `display:flex; gap:8px; align-items:center; flex-wrap: wrap; justify-content:flex-end;`;
 
-  const label = document.createElement("div");
-  label.textContent = "Line:";
-  label.style.cssText = `font-size: 12px; opacity: 0.85;`;
+  const lineLabel = document.createElement("div");
+  lineLabel.textContent = "Line:";
+  lineLabel.style.cssText = `font-size: 12px; opacity: 0.85;`;
 
   const lineInput = document.createElement("input");
   lineInput.type = "number";
@@ -256,6 +265,42 @@
     font-size: 12px;
   `;
 
+  // Slider controls
+  const sliderWrap = document.createElement("div");
+  sliderWrap.style.cssText = `
+    width: 100%;
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 10px;
+    align-items: center;
+  `;
+
+  const sliderLabel = document.createElement("div");
+  sliderLabel.textContent = "Games:";
+  sliderLabel.style.cssText = `font-size: 12px; opacity: 0.85;`;
+
+  const slider = document.createElement("input");
+  slider.type = "range";
+  slider.min = "1";
+  slider.max = String(AVAILABLE);
+  slider.step = "1";
+  slider.value = String(gamesShown);
+  slider.style.cssText = `width: 100%;`;
+
+  const sliderValue = document.createElement("div");
+  sliderValue.style.cssText = `
+    font-size: 12px;
+    font-weight: 800;
+    opacity: 0.95;
+    min-width: 34px;
+    text-align: right;
+  `;
+  sliderValue.textContent = String(gamesShown);
+
+  sliderWrap.appendChild(sliderLabel);
+  sliderWrap.appendChild(slider);
+  sliderWrap.appendChild(sliderValue);
+
   const closeBtn = document.createElement("button");
   closeBtn.textContent = "✕";
   closeBtn.title = "Close";
@@ -269,25 +314,23 @@
     color: #fff;
     font-weight: 800;
     font-size: 12px;
+    align-self: flex-end;
   `;
   closeBtn.onclick = () => overlay.remove();
 
-  inputRow.appendChild(label);
-  inputRow.appendChild(lineInput);
-  inputRow.appendChild(setBtn);
-  inputRow.appendChild(clearBtn);
-  controls.appendChild(inputRow);
+  lineRow.appendChild(lineLabel);
+  lineRow.appendChild(lineInput);
+  lineRow.appendChild(setBtn);
+  lineRow.appendChild(clearBtn);
+
+  controls.appendChild(lineRow);
+  controls.appendChild(sliderWrap);
   controls.appendChild(closeBtn);
 
   title.appendChild(titleLeft);
   title.appendChild(controls);
 
-  // Summary
-  const scores = games.map((g) => g.performance);
-  const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
-  const max = Math.max(...scores);
-  const min = Math.min(...scores);
-
+  // Summary area
   const summary = document.createElement("div");
   summary.style.cssText = `
     padding: 10px 14px;
@@ -304,24 +347,30 @@
       border-radius: 12px;
       padding: 10px;
     `;
-    d.innerHTML = `
-      <div style="opacity:0.8; font-size: 12px;">${label}</div>
-      <div style="font-size: 18px; font-weight: 800; margin-top: 2px;">${value}</div>
-    `;
-    return d;
+    const valueEl = document.createElement("div");
+    valueEl.style.cssText = `font-size: 18px; font-weight: 800; margin-top: 2px;`;
+    valueEl.textContent = value;
+
+    d.innerHTML = `<div style="opacity:0.8; font-size: 12px;">${label}</div>`;
+    d.appendChild(valueEl);
+    return { box: d, valueEl };
   };
 
-  summary.appendChild(statBox("Avg", avg.toFixed(1)));
-  summary.appendChild(statBox("Max", max));
-  summary.appendChild(statBox("Min", min));
+  const avgBox = statBox("Avg", "—");
+  const maxBox = statBox("Max", "—");
+  const minBox = statBox("Min", "—");
+
+  summary.appendChild(avgBox.box);
+  summary.appendChild(maxBox.box);
+  summary.appendChild(minBox.box);
 
   // Chart container
   const chartWrap = document.createElement("div");
   chartWrap.style.cssText = `padding: 0 14px 10px 14px;`;
 
   const canvas = document.createElement("canvas");
-  canvas.width = 820;
-  canvas.height = 300;
+  canvas.width = 860;
+  canvas.height = 320;
   canvas.style.cssText = `
     width: 100%;
     height: auto;
@@ -356,22 +405,6 @@
   tbl.appendChild(thead);
 
   const tbody = document.createElement("tbody");
-  games.forEach((g) => {
-    const tr = document.createElement("tr");
-    const mgRaw = Math.floor(toNum(g.MG));
-    const mins = Math.floor(toNum(g.Mins));
-    tr.innerHTML = `
-      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); max-width: 420px; overflow:hidden; text-overflow: ellipsis; white-space: nowrap;" title="${g.Game}">${g.Game}</td>
-      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${mins || ""}</td>
-      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); font-weight: 800;">${g.performance}</td>
-      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${g.matchPoints}</td>
-      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${g.tryAssistPoints}</td>
-      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${g.runMetrePoints} <span style="opacity:0.65;">(${mgRaw}m)</span></td>
-      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${toNum(g.LB)}</td>
-      <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${toNum(g.TCK)}</td>
-    `;
-    tbody.appendChild(tr);
-  });
   tbl.appendChild(tbody);
 
   overlay.appendChild(title);
@@ -380,10 +413,45 @@
   overlay.appendChild(tbl);
   document.body.appendChild(overlay);
 
-  // ---------- CHART DRAWING (WITH BENCHMARK LINE) ----------
+  // ---------- RENDERING ----------
   const ctx = canvas.getContext("2d");
 
-  const drawChart = () => {
+  const getVisibleGames = () => allGames.slice(0, gamesShown);
+
+  const updateSummary = (visible) => {
+    const vals = visible.map(g => g.performance);
+    const avg = vals.reduce((a,b) => a+b, 0) / vals.length;
+    const mx = Math.max(...vals);
+    const mn = Math.min(...vals);
+    avgBox.valueEl.textContent = avg.toFixed(1);
+    maxBox.valueEl.textContent = String(mx);
+    minBox.valueEl.textContent = String(mn);
+
+    const titleEl = document.getElementById("fs-title");
+    if (titleEl) titleEl.textContent = `Performance (Last ${visible.length} games)`;
+  };
+
+  const updateTable = (visible) => {
+    tbody.innerHTML = "";
+    visible.forEach((g) => {
+      const tr = document.createElement("tr");
+      const mgRaw = Math.floor(toNum(g.MG));
+      const mins = Math.floor(toNum(g.Mins));
+      tr.innerHTML = `
+        <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); max-width: 520px; overflow:hidden; text-overflow: ellipsis; white-space: nowrap;" title="${g.Game}">${g.Game}</td>
+        <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${mins || ""}</td>
+        <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08); font-weight: 800;">${g.performance}</td>
+        <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${g.matchPoints}</td>
+        <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${g.tryAssistPoints}</td>
+        <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${g.runMetrePoints} <span style="opacity:0.65;">(${mgRaw}m)</span></td>
+        <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${toNum(g.LB)}</td>
+        <td style="padding: 7px 6px; border-bottom: 1px solid rgba(255,255,255,0.08);">${toNum(g.TCK)}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  };
+
+  const drawChart = (visible) => {
     const W = canvas.width;
     const H = canvas.height;
 
@@ -392,9 +460,8 @@
     const plotH = H - pad.t - pad.b;
 
     // Reverse so chart shows older->newer left-to-right
-    const data = [...games].reverse();
+    const data = [...visible].reverse();
 
-    // Expand y-range to include benchmark line if it exists
     const yVals = data.map((d) => d.performance);
     let yMin = Math.min(...yVals);
     let yMax = Math.max(...yVals);
@@ -405,10 +472,9 @@
     }
 
     const yRange = yMax - yMin || 1;
-
     ctx.clearRect(0, 0, W, H);
 
-    // Grid lines + y labels
+    // Grid + y labels
     const gridLines = 4;
     ctx.lineWidth = 1;
 
@@ -427,7 +493,6 @@
       ctx.fillText(String(Math.round(v)), 6, y + 4);
     }
 
-    // x positions
     const xStep = plotW / Math.max(1, data.length - 1);
     const xAt = (idx) => pad.l + idx * xStep;
     const yAt = (val) => pad.t + ((yMax - val) / yRange) * plotH;
@@ -444,7 +509,6 @@
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Label benchmark
       ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
       ctx.font = "11px system-ui";
       ctx.fillText(`Line: ${benchmarkLine}`, pad.l + 8, Math.max(12, y - 6));
@@ -472,9 +536,10 @@
       ctx.fill();
     });
 
-    // X labels (every 5th + last)
+    // X labels (every 5th + last; reduce for small n)
     const labelIdxs = [];
-    for (let i = 0; i < data.length; i += 5) labelIdxs.push(i);
+    const step = data.length <= 10 ? 2 : 5;
+    for (let i = 0; i < data.length; i += step) labelIdxs.push(i);
     if (!labelIdxs.includes(data.length - 1)) labelIdxs.push(data.length - 1);
 
     ctx.fillStyle = "rgba(255,255,255,0.75)";
@@ -489,8 +554,12 @@
     });
   };
 
-  // Initial draw
-  drawChart();
+  const render = () => {
+    const visible = getVisibleGames();
+    updateSummary(visible);
+    updateTable(visible);
+    drawChart(visible);
+  };
 
   // ---------- INPUT HANDLERS ----------
   const setBenchmark = () => {
@@ -500,22 +569,31 @@
       return;
     }
     benchmarkLine = val;
-    drawChart();
+    render();
   };
 
   const clearBenchmark = () => {
     benchmarkLine = null;
     lineInput.value = "";
-    drawChart();
+    render();
   };
 
   setBtn.onclick = setBenchmark;
   clearBtn.onclick = clearBenchmark;
 
-  // Enter key sets the line
   lineInput.addEventListener("keydown", (e) => {
     if (e.key === "Enter") setBenchmark();
   });
 
-  console.log(`[FootyStats Perf] Rendered overlay with ${games.length} games. Close with the ✕ button.`);
+  // Slider update (live)
+  slider.addEventListener("input", () => {
+    gamesShown = Number(slider.value);
+    sliderValue.textContent = String(gamesShown);
+    render();
+  });
+
+  // Initial render
+  render();
+
+  console.log(`[FootyStats Perf] Rendered overlay. Available games: ${AVAILABLE}. Slider: 1..${AVAILABLE}. Close with ✕.`);
 })();
